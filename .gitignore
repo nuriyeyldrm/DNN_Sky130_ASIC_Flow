@@ -1,0 +1,9 @@
+runs/
+asap7sc7p5t_28/
+*.gz
+*.log
+*.vcd
+*.db
+*.lib
+*.lef
+*.gds
