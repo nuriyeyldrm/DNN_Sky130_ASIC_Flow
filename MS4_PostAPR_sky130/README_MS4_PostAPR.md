@@ -11,13 +11,35 @@ complete GDS file during the MS3 run.
 
 MS4 for Sky130 focuses on:
 
+-   Verifying physical signoff results (DRC & LVS)
 -   Verifying the final GDS file
 -   Opening the layout using a layout viewer
 -   Capturing a screenshot of the full chip layout
 
 ------------------------------------------------------------------------
 
-## 1. Locate the Final GDS File
+## 1. Verify Signoff Reports
+
+Before opening the GDS file, confirm that MS3 completed successfully.
+
+Navigate to:
+
+    runs/MS3/reports/signoff
+
+Check the following files:
+
+    drc.rpt  
+    39-top.lvs.rpt 
+
+Confirm:
+- COUNT: 0 in drc.rpt
+- Total errors = 0 in 39-top.lvs.rpt
+
+If either report shows errors, MS3 must be fixed before proceeding.
+
+------------------------------------------------------------------------
+
+## 2. Locate the Final GDS File
 
 After a successful MS3 run, the final GDS file is generated at:
 
@@ -35,7 +57,7 @@ No additional merging or mapping files are required.
 
 ------------------------------------------------------------------------
 
-## 2. Open the Layout
+## 3. Open the Layout
 
 The recommended layout viewer is **KLayout**, which is available for:
 
@@ -96,10 +118,11 @@ Once opened:
 
 -   Press **F** to zoom to the full chip layout.
 -   Verify that the entire chip boundary is visible.
+-   Ensure standard cell rows and routed metal layers are visible.
 
 ------------------------------------------------------------------------
 
-## 3. Export Layout Image
+## 4. Export Layout Image
 
 To generate a high-quality image:
 
@@ -116,7 +139,6 @@ Save the image as:
 
 ASAP7 MS4 required manual GDS export and Virtuoso import.
 
-Sky130 MS4 uses the automatically generated GDS from OpenLane and
-visualizes it directly.
+Sky130 MS4 verifies physical signoff (DRC & LVS) and visualizes the automatically generated GDS from OpenLane.
 
 This reflects a simplified and fully open-source physical design flow.
