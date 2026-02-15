@@ -2,48 +2,135 @@
 # MS5 Sky130 Post-Route OpenSTA Script
 # Multi-Corner Enabled
 # --------------------------------------------------
+#
+# PURPOSE:
+# This script performs post-route static timing analysis (STA)
+# using OpenSTA with extracted parasitics (SPEF).
+#
+# It is intended to replicate PrimeTime-style signoff timing
+# for the Sky130 flow.
+#
+# --------------------------------------------------
+# HOW TO USE:
+#
+# The liberty file is passed via environment variable:
+#
+#   make sta_tt
+#   make sta_ss
+#   make sta_ff
+#
+# Each Makefile target sets $LIB accordingly.
+#
+# If you want to manually test:
+#   export LIB=inputs/sky130_tt.lib
+#   sta -exit run_opensta.tcl
+#
+# --------------------------------------------------
 
-# Usage:
-# opensta run_opensta.tcl <liberty_file>
-
-if { $argc < 1 } {
-    puts "Usage: opensta run_opensta.tcl <liberty_file>"
-    exit 1
-}
-
-set liberty_file [lindex $argv 0]
+set liberty_file $::env(LIB)
 set design_name top
 
 puts "-----------------------------------------"
 puts "Running STA with liberty: $liberty_file"
 puts "-----------------------------------------"
 
-# Read liberty
+# --------------------------------------------------
+# 1. Read Liberty (Timing Models)
+# --------------------------------------------------
+#
+# You can change the liberty file to analyze
+# different PVT corners.
+#
+# Examples:
+#   TT → typical
+#   SS → worst-case slow silicon
+#   FF → fastest silicon
+#
+# Changing the liberty changes:
+#   - Cell delays
+#   - Setup/hold behavior
+#   - Overall Fmax
+#
+
 read_liberty $liberty_file
 
-# Read netlist
+# --------------------------------------------------
+# 2. Read Post-Route Netlist
+# --------------------------------------------------
+#
+# This must be the GL (gate-level) netlist from MS3.
+#
+# If you modify synthesis or APR, regenerate MS3 first.
+#
+
 read_verilog inputs/top.v
 
-# Read SDC
-read_sdc inputs/top.sdc
+# --------------------------------------------------
+# 3. Link Design
+# --------------------------------------------------
+#
+# Resolves standard cells against liberty models.
+#
+# If this fails:
+#   - Liberty mismatch
+#   - Wrong design name
+#
 
-# Read SPEF
-read_spef inputs/top.spef
-
-# Link design
 link_design $design_name
 
-update_timing
+# --------------------------------------------------
+# 4. Read Timing Constraints
+# --------------------------------------------------
+#
+# The clock period inside top.sdc determines
+# target operating frequency.
+#
+# You can experiment by:
+#   - Reducing clock period
+#   - Adding multicycle constraints
+#   - Adding false paths
+#
+# Changing constraints affects:
+#   - Slack
+#   - Fmax
+#   - Critical path
+#
 
-# Reports
-report_area > outputs/area.rpt
-report_timing -max_paths 10 -digits 4 > outputs/timing.rpt
-report_power > outputs/power.rpt
+read_sdc inputs/top.sdc
+
+# --------------------------------------------------
+# 5. Read Extracted Parasitics (SPEF)
+# --------------------------------------------------
+#
+# This step enables RC-aware timing.
+#
+# If you comment this out,
+# you will get optimistic (pre-route) timing.
+#
+# ALWAYS include SPEF for signoff-quality results.
+#
+
+read_spef inputs/top.spef
+
+# --------------------------------------------------
+# 6. Timing Reports
+# --------------------------------------------------
+#
+# - report_checks: detailed path report
+# - report_tns: total negative slack
+# - report_wns: worst negative slack (critical metric)
+#
+# Binary search script reads wns.rpt.
+#
+
+report_checks -path_delay max -group_count 10 -digits 4 > outputs/timing.rpt
+report_tns > outputs/tns.rpt
+report_wns > outputs/wns.rpt
 
 puts "STA Completed"
 
 # Extract worst slack directly
-set worst_slack [report_tns]
+set worst_slack [report_wns]
 
 puts "Worst slack summary:"
 puts $worst_slack

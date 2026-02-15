@@ -1,3 +1,17 @@
+# --------------------------------------------------
+# MS5 Multi-Corner Binary Search Timing Script
+#
+# This script:
+#  - Performs RC-aware STA using OpenSTA
+#  - Searches maximum safe frequency using binary search
+#  - Extracts post-route power and area from MS3
+#  - Computes Energy and EDAP
+#
+# You may modify:
+#  - START_PERIOD / END_PERIOD (search window)
+#  - CYCLES (pipeline latency)
+# --------------------------------------------------
+
 import subprocess
 import re
 import csv
@@ -14,11 +28,17 @@ CORNERS = {
     "FF": "inputs/sky130_ff.lib"
 }
 
-START_PERIOD = 20.0
+START_PERIOD = 60.0
 END_PERIOD = 1.0
-STEP = -0.5
 
-# TODO: MUST BE UPDATED BY USER
+# Binary search window (ns)
+# If timing fails even at START_PERIOD,
+# increase START_PERIOD.
+# If search is too slow, reduce window size.
+
+# Number of clock cycles required to produce one output
+# Must be obtained from simulation (pipeline depth).
+# Used to compute latency and energy.
 CYCLES = 2
 
 
@@ -51,100 +71,132 @@ def update_clock(period):
 
 
 def run_sta(lib):
+    env = os.environ.copy()
+    env["LIB"] = lib
+
     subprocess.run(
-        ["opensta", "run_opensta.tcl", lib],
-        stdout=subprocess.DEVNULL
+        ["sta", "-exit", "run_opensta.tcl"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        env=env,
+        check=True
     )
 
 
 def parse_timing():
-    with open("outputs/timing.rpt") as f:
+    try:
+        with open("outputs/wns.rpt") as f:
+            wns = float(f.read().split()[1])
+    except:
+        return None, None
+
+    # We no longer extract delay reliably
+    delay = None
+
+    return wns, delay
+
+
+def get_power_from_ms3():
+    with open("../MS3/reports/signoff/31-rcx_sta.power.rpt") as f:
         text = f.read()
 
-    slack_match = re.search(r"slack.*?(-?\d+\.\d+)", text)
-    delay_match = re.search(r"data arrival time\s+(\d+\.\d+)", text)
+    match = re.search(r"Total\s+[\d\.e\+\-]+\s+[\d\.e\+\-]+\s+[\d\.e\+\-]+\s+([\d\.e\+\-]+)", text)
 
-    slack = float(slack_match.group(1)) if slack_match else None
-    delay = float(delay_match.group(1)) if delay_match else None
+    if match:
+        power_watts = float(match.group(1))
+        return power_watts * 1000  # convert to mW
 
-    return slack, delay
-
-
-def parse_power():
-    with open("outputs/power.rpt") as f:
-        text = f.read()
-
-    power_match = re.search(r"Total\s+(-?\d+\.\d+)", text)
-    return float(power_match.group(1)) if power_match else None
+    return None
 
 
-def parse_area():
-    with open("outputs/area.rpt") as f:
-        text = f.read()
+def get_area_from_ms3():
+    with open("../MS3/reports/metrics.csv") as f:
+        lines = f.readlines()
 
-    area_match = re.search(r"Total cell area:\s+(\d+\.\d+)", text)
-    return float(area_match.group(1)) / 1e6 if area_match else None
+    header = lines[0].strip().split(",")
+    values = lines[1].strip().split(",")
+
+    idx = header.index("CoreArea_um^2")
+    core_area_um2 = float(values[idx])
+
+    return core_area_um2 / 1e6
 
 
 # ---------------------------
 # Sweep Function
 # ---------------------------
 
-def sweep_corner(corner, lib):
+def sweep_corner(corner, lib, power_mw, area_mm2):
 
     print(f"\n===== Sweeping Corner: {corner} =====")
 
+    # Binary search for minimum clock period that satisfies slack >= 0
+    # high = safe region
+    # low  = violating region
+    # Converges when search window < tolerance
+
+    low = END_PERIOD
+    high = START_PERIOD
+
     best_period = None
     best_slack = None
-    best_delay = None
-    best_power = None
-    area_mm2 = None
 
-    period = START_PERIOD
+    tolerance = 0.01
+    iterations = 0
 
-    while period >= END_PERIOD:
+    while (high - low) > tolerance:
 
-        update_clock(period)
+        mid = (high + low) / 2.0
+        iterations += 1
+
+        update_clock(mid)
         run_sta(lib)
 
-        slack, delay = parse_timing()
+        slack, _ = parse_timing()
 
         if slack is None:
             break
 
-        if slack < 0:
-            break
-
-        best_period = period
-        best_slack = slack
-        best_delay = delay
-        best_power = parse_power()
-        area_mm2 = parse_area()
-
-        period += STEP
+        if slack >= 0:
+            best_period = mid
+            best_slack = slack
+            high = mid
+        else:
+            low = mid
 
     if best_period is None:
         print(f"No valid operating point found for {corner}")
         return None
 
+    # Remove negative zero
+    if abs(best_slack) < 1e-6:
+        best_slack = 0.0
+
     fmax = 1000 / best_period
-    latency_ns = (CYCLES * 1000) / fmax
-    energy_pj = best_power * latency_ns / 1000
+    latency_ns = CYCLES * best_period
+    energy_pj = power_mw * latency_ns / 1000
+    
+    # EDAP = Energy × Delay × Area
+    # Used as composite optimization metric
+    # Lower EDAP = better overall tradeoff
     edap = energy_pj * latency_ns * area_mm2
-    margin = (best_slack / best_period) * 100
+    margin = (best_slack / best_period) * 100 if best_period != 0 else 0
+
+    print(f"  -> Converged in {iterations} iterations")
+    print(f"  -> Final Period: {best_period:.4f} ns")
+    print(f"  -> Fmax: {fmax:.2f} MHz")
 
     return [
         corner,
-        round(best_period,3),
-        round(fmax,2),
-        round(best_slack,4),
-        round(best_delay,4),
-        round(best_power,4),
-        round(latency_ns,4),
-        round(energy_pj,4),
-        round(area_mm2,6),
-        round(edap,6),
-        round(margin,2)
+        round(best_period, 3),
+        round(fmax, 2),
+        round(best_slack, 4),
+        round(power_mw, 4),
+        round(latency_ns, 4),
+        round(energy_pj, 4),
+        round(area_mm2, 6),
+        round(edap, 6),
+        round(margin, 2)
     ]
 
 
@@ -175,8 +227,15 @@ if __name__ == "__main__":
         else:
             selected_corners = {args.corner: CORNERS[args.corner]}
 
+        power_mw = get_power_from_ms3()
+        area_mm2 = get_area_from_ms3()
+
+        if power_mw is None or area_mm2 is None:
+            print("ERROR: Could not extract power or area from MS3.")
+            exit(1)
+
         for corner, lib in selected_corners.items():
-            result = sweep_corner(corner, lib)
+            result = sweep_corner(corner, lib, power_mw, area_mm2)
             if result:
                 results.append(result)
 
@@ -188,9 +247,14 @@ if __name__ == "__main__":
             writer = csv.writer(f)
             writer.writerow([
                 "Corner","Period(ns)","Fmax(MHz)","Slack(ns)",
-                "Delay(ns)","Power(mW)","Latency(ns)",
+                "Power(mW)","Latency(ns)",
                 "Energy(pJ)","Area(mm2)","EDAP","Margin(%)"
             ])
             writer.writerows(results)
+        
+        worst = min(results, key=lambda x: x[2])  # smallest Fmax
+        print("\n===== Worst Case Corner =====")
+        print(f"Corner: {worst[0]}")
+        print(f"Max Safe Frequency: {worst[2]} MHz")
 
         print("\nResults written to results_summary.csv")
