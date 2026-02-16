@@ -41,8 +41,41 @@ set ::env(GRT_ADJUSTMENT) 0.35
 # 3) Die Sizing Strategy
 # ===============================================================
 
-# "relative" automatically sizes die based on cell area.
-# You should NOT change unless they understand floorplanning.
+# ===============================================================
+# Floorplanning Strategy (Sky130 / OpenLane)
+#
+# By default, we use:
+#   set ::env(FP_SIZING) "relative"
+#
+# In this mode, OpenLane automatically computes the core size
+# based on:
+#   - Synthesized standard cell area
+#   - Target utilization (FP_CORE_UTIL)
+#   - Aspect ratio (FP_ASPECT_RATIO)
+#
+# This follows the same principle as the manual die-area
+# calculation used in the ASAP flow, but the geometry math
+# is handled internally by OpenLane.
+#
+# ---------------------------------------------------------------
+# OPTIONAL (For Manual Floorplan Experiments)
+#
+# You may switch to explicit die/core geometry control:
+#
+#   set ::env(FP_SIZING) "absolute"
+#   set ::env(DIE_AREA)  {0 0 300 300}
+#   set ::env(CORE_AREA) {20 20 280 280}
+#
+# This enables manual die-dimension experimentation similar to
+# the ASAP TCL-based floorplan scripting.
+#
+# NOTE:
+# - Larger DIE_AREA improves routing robustness.
+# - Too small DIE_AREA may cause congestion or DRC failure.
+# ===============================================================
+
+# "relative" automatically sizes die based on
+# synthesized cell area, FP_CORE_UTIL, and FP_ASPECT_RATIO.
 set ::env(FP_SIZING) "relative"
 
 # Keep square core (1.0). Change only if experimenting.
