@@ -130,9 +130,20 @@ set ::env(FP_PIN_ORDER_CFG) $::env(DESIGN_DIR)/pin_order.cfg
 # 6) Power Delivery Network (PDN)
 # ===============================================================
 
-# IMPORTANT:
-# We DO NOT override the PDN engine manually.
-# Instead, we tune it using parameters below.
+# ---------------------------------------------------------------
+# OPTIONAL: Custom PDN (Advanced Experiment)
+#
+# Uncomment the line below to use explicit PDN configuration:
+#
+#   set ::env(PDN_CFG) $::env(DESIGN_DIR)/pdn.tcl
+#
+# This enables manual PDN control similar in spirit to the
+# ASAP manual stripe scripting.
+#
+# Default configuration uses parameter-controlled PDN for stability.
+# ---------------------------------------------------------------
+
+# By default, we do NOT override the PDN engine manually.
 
 # Standard cell power nets
 set ::env(VDD_NETS) "VPWR"
