@@ -7,17 +7,17 @@ function automatic bit has_x(input logic [16:0] v);
     has_x = (^v === 1'bx);
 endfunction
 
-reg [4:0] x0, x1, x2, x3;
-reg [4:0] w04, w14, w24, w34;
-reg [4:0] w05, w15, w25, w35;
-reg [4:0] w06, w16, w26, w36;
-reg [4:0] w07, w17, w27, w37;
-reg [4:0] w48, w58, w68, w78;
-reg [4:0] w49, w59, w69, w79;
+reg signed [4:0] x0, x1, x2, x3;
+reg signed [4:0] w04, w14, w24, w34;
+reg signed [4:0] w05, w15, w25, w35;
+reg signed [4:0] w06, w16, w26, w36;
+reg signed [4:0] w07, w17, w27, w37;
+reg signed [4:0] w48, w58, w68, w78;
+reg signed [4:0] w49, w59, w69, w79;
 
 reg clk;
 
-wire [16:0] out0, out1;
+wire signed [16:0] out0, out1;
 wire out10_ready, out11_ready;
 
 reg in_ready;
